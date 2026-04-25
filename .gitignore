@@ -1,0 +1,15 @@
+config.env
+.env
+client_secrets.json
+token.json
+output/
+__pycache__/
+*.pyc
+diagnose*.py
+restore_service.py
+deploy_env_vars.py
+check_*.py
+get_logs.py
+link_railway_repo.py
+test_local_pipeline.py
+*.mp4
