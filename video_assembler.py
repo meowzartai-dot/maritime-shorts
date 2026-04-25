@@ -94,6 +94,30 @@ async def assemble_video(
         return None
 
 
+async def _has_audio_stream(video_path: str) -> bool:
+    """ffprobe ile video dosyasında ses akışı olup olmadığını kontrol et."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "quiet",
+            "-select_streams", "a",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
+            video_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        has_audio = b"audio" in stdout
+        logger.info(f"Audio probe: {video_path} → {'has audio' if has_audio else 'NO audio'}")
+        return has_audio
+    except FileNotFoundError:
+        logger.warning("ffprobe not found, assuming video has audio")
+        return True  # Güvenli tarafta kal, mix denensin
+    except Exception as e:
+        logger.warning(f"Audio probe error: {e}, assuming video has audio")
+        return True
+
+
 async def assemble_with_mixed_audio(
     video_path: str,
     voiceover_path: str,
@@ -122,13 +146,24 @@ async def assemble_with_mixed_audio(
         logger.info("No voiceover file, returning video as-is")
         return video_path
 
-    if progress_callback:
-        await progress_callback("🔧 Mixing video ambient + voiceover...")
-
     if not output_path:
         tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
         output_path = tmp.name
         tmp.close()
+
+    # ── Ses akışı kontrolü ────────────────────────────────────────────────
+    # Veo 3.1 / Seedance videoları çoğu zaman ses akışı OLMADAN gelir.
+    # Bu durumda mix yerine basit birleştirme kullan.
+    has_audio = await _has_audio_stream(video_path)
+
+    if not has_audio:
+        logger.info("Video has no audio stream → falling back to simple voiceover merge")
+        if progress_callback:
+            await progress_callback("🔧 Adding voiceover to video (no ambient audio)...")
+        return await assemble_video(video_path, voiceover_path, output_path, progress_callback)
+
+    if progress_callback:
+        await progress_callback("🔧 Mixing video ambient + voiceover...")
 
     # FFmpeg: 2 ses akışını mix et
     filter_complex = (
@@ -161,11 +196,26 @@ async def assemble_with_mixed_audio(
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            # Video'nun sesi yoksa basit birleştirmeye düş
-            if "does not contain any stream" in stderr.decode():
-                logger.info("Video has no audio stream, falling back to simple merge")
-                return await assemble_video(video_path, voiceover_path, output_path)
-            logger.error(f"FFmpeg mix error: {stderr.decode()[:500]}")
+            stderr_text = stderr.decode(errors="replace")
+            # Video'nun sesi yoksa veya stream eşleşmesi başarısızsa basit birleştirmeye düş
+            no_audio_indicators = [
+                "does not contain any stream",
+                "matches no streams",
+                "Invalid stream specifier",
+                "Stream specifier",
+                "No such filter",
+                "Cannot find a matching stream",
+            ]
+            if any(indicator in stderr_text for indicator in no_audio_indicators):
+                logger.info(f"FFmpeg mix failed (no audio stream detected), falling back to simple merge")
+                return await assemble_video(video_path, voiceover_path, output_path, progress_callback)
+
+            logger.error(f"FFmpeg mix error: {stderr_text[:500]}")
+            # Son çare: basit birleştirmeyi dene (mix başarısız olduysa en azından voiceover ekle)
+            logger.info("Attempting simple merge as last resort...")
+            fallback_result = await assemble_video(video_path, voiceover_path, output_path, progress_callback)
+            if fallback_result:
+                return fallback_result
             return None
 
         output_size = os.path.getsize(output_path)
@@ -177,7 +227,13 @@ async def assemble_with_mixed_audio(
         return None
     except Exception as e:
         logger.error(f"Mix assembly error: {e}")
-        return None
+        # Son çare fallback
+        try:
+            logger.info("Attempting simple merge after exception...")
+            return await assemble_video(video_path, voiceover_path, output_path, progress_callback)
+        except Exception as e2:
+            logger.error(f"Simple merge also failed: {e2}")
+            return None
 
 
 def cleanup_temp_files(*paths: str):
