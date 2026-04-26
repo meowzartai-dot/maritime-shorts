@@ -672,9 +672,14 @@ def main():
     logger.info(f"   ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
 
     try:
+        from telegram.ext import Defaults
+        berlin_tz = pytz.timezone('Europe/Berlin')
+        defaults = Defaults(tzinfo=berlin_tz)
+        
         app = (
             Application.builder()
             .token(TELEGRAM_BOT_TOKEN)
+            .defaults(defaults)
             .concurrent_updates(True)
             .read_timeout(30)
             .write_timeout(30)
@@ -686,8 +691,7 @@ def main():
         # ── Daily Job Configuration ──────────────────────────────
         # Her gün 00:05 Berlin saatinde video üret → 03:05'te yayınla
         # YouTube'a 3 saat analiz süresi verir
-        berlin_tz = pytz.timezone('Europe/Berlin')
-        job_time = time(hour=0, minute=5, tzinfo=berlin_tz)
+        job_time = time(hour=0, minute=5)
         app.job_queue.run_daily(automatic_daily_video, time=job_time, name='daily_automation')
         logger.info(f"⏰ Daily automation scheduled at 00:05 Europe/Berlin (Publish at 03:05 Berlin)")
 

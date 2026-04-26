@@ -95,7 +95,7 @@ async def generate_content(
     logger.info(f"Generating content for: {user_message[:100]}...")
 
     response = await openai_client.chat.completions.create(
-        model="gpt-4.1",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
