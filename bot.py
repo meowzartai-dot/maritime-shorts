@@ -691,9 +691,10 @@ def main():
         # ── Daily Job Configuration ──────────────────────────────
         # Her gün 00:05 Berlin saatinde video üret → 03:05'te yayınla
         # YouTube'a 3 saat analiz süresi verir
-        job_time = time(hour=0, minute=5)
-        app.job_queue.run_daily(automatic_daily_video, time=job_time, name='daily_automation')
-        logger.info(f"⏰ Daily automation scheduled at 00:05 Europe/Berlin (Publish at 03:05 Berlin)")
+        # KULLANICI İSTEĞİ ÜZERİNE OTOMASYON GEÇİCİ OLARAK DURDURULDU
+        # job_time = time(hour=0, minute=5)
+        # app.job_queue.run_daily(automatic_daily_video, time=job_time, name='daily_automation')
+        logger.info(f"⏸️ Daily automation is temporarily DISABLED per user request.")
 
         app.add_handler(CommandHandler("start", cmd_start))
         app.add_handler(CommandHandler("generate", cmd_generate))
